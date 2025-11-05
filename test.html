@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Test</title>
+</head>
+<body>
+    <div id="container">Test</div>
+    
+    <script type="module">
+        // Test if basic module syntax works
+        console.log("Script loaded successfully");
+        
+        // Test the exact structure around line 236 area
+        function onDocumentMouseDown(event) {
+            // --- NEW: Check if click was on the iframe ---
+            // If it was, don't raycast. This lets the user click *inside* the iframe.
+            if (event.target === iframe) {
+                return;
+            }
+            // --- END NEW ---
+            
+            console.log("Mouse down");
+        }
+        
+        console.log("All functions defined");
+    </script>
+</body>
+</html>

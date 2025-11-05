@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Teacher Jump</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            background: linear-gradient(to bottom, #87CEEB 0%, #E0F6FF 50%, #90EE90 50%, #98FB98 100%);
+            font-family: 'Arial', sans-serif;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            overflow: hidden;
+        }
+        #game-container {
+            text-align: center;
+        }
+        #game-title {
+            font-size: 2em;
+            font-weight: bold;
+            color: #2c3e50;
+            margin-bottom: 10px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.1);
+        }
+        #game-canvas {
+            border: 4px solid #34495e;
+            border-radius: 8px;
+            background: #fff;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.2);
+            display: block;
+            margin: 0 auto;
+        }
+        #score-display {
+            margin-top: 15px;
+            font-size: 1.5em;
+            font-weight: bold;
+            color: #2c3e50;
+        }
+        #instructions {
+            margin-top: 10px;
+            font-size: 1em;
+            color: #34495e;
+            opacity: 0.8;
+        }
+        .game-over {
+            animation: pulse 0.5s ease-in-out;
+        }
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.05); }
+        }
+    </style>
+</head>
+<body>
+    <div id="game-container">
+        <div id="game-title">👨‍🏫 Teacher Jump! 📚</div>
+        <canvas id="game-canvas" width="800" height="400"></canvas>
+        <div id="score-display">Score: 0 | High Score: 0</div>
+        <div id="instructions">Press SPACE or click to jump over barriers!</div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('game-canvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+
+        // Game variables
+        let gameRunning = false;
+        let gameStarted = false;
+        let score = 0;
+        let highScore = localStorage.getItem('teacherJumpHighScore') || 0;
+        let gameSpeed = 6;
+        let gravity = 0.8;
+
+        // Teacher (player)
+        const teacher = {
+            x: 100,
+            y: 0,
+            width: 40,
+            height: 50,
+            jumping: false,
+            velocityY: 0,
+            groundY: canvas.height - 80
+        };
+        teacher.y = teacher.groundY;
+
+        // Barriers array
+        let barriers = [];
+        let frameCount = 0;
+
+        // Barrier types with educational themes
+        const barrierTypes = [
+            { text: '📱', name: 'Distraction' },
+            { text: '💤', name: 'Apathy' },
+            { text: '📝', name: 'Paperwork' },
+            { text: '🔒', name: 'Budget Cuts' },
+            { text: '⏰', name: 'Time Pressure' },
+            { text: '🚫', name: 'Barriers' }
+        ];
+
+        // Input handling
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'Space') {
+                e.preventDefault();
+                if (!gameStarted) {
+                    startGame();
+                } else if (gameRunning && !teacher.jumping) {
+                    jump();
+                }
+            }
+        });
+
+        canvas.addEventListener('click', () => {
+            if (!gameStarted) {
+                startGame();
+            } else if (gameRunning && !teacher.jumping) {
+                jump();
+            }
+        });
+
+        function startGame() {
+            gameStarted = true;
+            gameRunning = true;
+            score = 0;
+            gameSpeed = 6;
+            barriers = [];
+            frameCount = 0;
+            teacher.y = teacher.groundY;
+            teacher.velocityY = 0;
+            teacher.jumping = false;
+            gameLoop();
+        }
+
+        function jump() {
+            if (!teacher.jumping) {
+                teacher.jumping = true;
+                teacher.velocityY = -15;
+            }
+        }
+
+        function updateTeacher() {
+            if (teacher.jumping) {
+                teacher.velocityY += gravity;
+                teacher.y += teacher.velocityY;
+
+                if (teacher.y >= teacher.groundY) {
+                    teacher.y = teacher.groundY;
+                    teacher.jumping = false;
+                    teacher.velocityY = 0;
+                }
+            }
+        }
+
+        function createBarrier() {
+            const barrierType = barrierTypes[Math.floor(Math.random() * barrierTypes.length)];
+            barriers.push({
+                x: canvas.width,
+                y: teacher.groundY,
+                width: 35,
+                height: 50,
+                type: barrierType
+            });
+        }
+
+        function updateBarriers() {
+            // Create new barriers periodically
+            if (frameCount % 90 === 0) {
+                createBarrier();
+            }
+
+            // Move and remove barriers
+            barriers = barriers.filter(barrier => {
+                barrier.x -= gameSpeed;
+
+                // Check collision
+                if (gameRunning &&
+                    teacher.x < barrier.x + barrier.width &&
+                    teacher.x + teacher.width > barrier.x &&
+                    teacher.y < barrier.y + barrier.height &&
+                    teacher.y + teacher.height > barrier.y) {
+                    gameOver();
+                }
+
+                // Remove off-screen barriers and increment score
+                if (barrier.x + barrier.width < 0) {
+                    score++;
+                    if (score > highScore) {
+                        highScore = score;
+                        localStorage.setItem('teacherJumpHighScore', highScore);
+                    }
+                    // Increase difficulty
+                    if (score % 5 === 0 && gameSpeed < 12) {
+                        gameSpeed += 0.5;
+                    }
+                    return false;
+                }
+                return true;
+            });
+        }
+
+        function drawGround() {
+            // Ground
+            ctx.fillStyle = '#8B4513';
+            ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+            
+            // Ground line
+            ctx.strokeStyle = '#654321';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(0, canvas.height - 60);
+            ctx.lineTo(canvas.width, canvas.height - 60);
+            ctx.stroke();
+
+            // Grass details
+            ctx.fillStyle = '#228B22';
+            for (let i = 0; i < canvas.width; i += 20) {
+                ctx.fillRect(i - (frameCount % 20), canvas.height - 65, 15, 5);
+            }
+        }
+
+        function drawClouds() {
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+            const cloudOffset = (frameCount * 0.5) % (canvas.width + 200);
+            
+            // Cloud 1
+            ctx.beginPath();
+            ctx.arc(200 - cloudOffset, 50, 25, 0, Math.PI * 2);
+            ctx.arc(230 - cloudOffset, 50, 30, 0, Math.PI * 2);
+            ctx.arc(260 - cloudOffset, 50, 25, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Cloud 2
+            ctx.beginPath();
+            ctx.arc(500 - cloudOffset, 80, 20, 0, Math.PI * 2);
+            ctx.arc(525 - cloudOffset, 80, 25, 0, Math.PI * 2);
+            ctx.arc(550 - cloudOffset, 80, 20, 0, Math.PI * 2);
+            ctx.fill();
+        }
+
+        function drawTeacher() {
+            // Teacher body (simplified character)
+            ctx.fillStyle = '#3498db';
+            ctx.fillRect(teacher.x, teacher.y + 20, teacher.width, 30);
+
+            // Head
+            ctx.fillStyle = '#f4a460';
+            ctx.beginPath();
+            ctx.arc(teacher.x + teacher.width / 2, teacher.y + 10, 12, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Glasses
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.beginPath();
+            ctx.arc(teacher.x + teacher.width / 2 - 5, teacher.y + 10, 4, 0, Math.PI * 2);
+            ctx.arc(teacher.x + teacher.width / 2 + 5, teacher.y + 10, 4, 0, Math.PI * 2);
+            ctx.stroke();
+
+            // Arms (book holding)
+            ctx.strokeStyle = '#3498db';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(teacher.x + 5, teacher.y + 25);
+            ctx.lineTo(teacher.x - 5, teacher.y + 30);
+            ctx.stroke();
+
+            // Book
+            ctx.fillStyle = '#e74c3c';
+            ctx.fillRect(teacher.x - 8, teacher.y + 28, 12, 8);
+
+            // Legs
+            ctx.strokeStyle = '#2c3e50';
+            ctx.lineWidth = 3;
+            ctx.beginPath();
+            ctx.moveTo(teacher.x + 15, teacher.y + 50);
+            ctx.lineTo(teacher.x + 12, teacher.y + 60);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(teacher.x + 25, teacher.y + 50);
+            ctx.lineTo(teacher.x + 28, teacher.y + 60);
+            ctx.stroke();
+        }
+
+        function drawBarriers() {
+            barriers.forEach(barrier => {
+                // Barrier shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.fillRect(barrier.x + 5, barrier.y + barrier.height, barrier.width, 5);
+
+                // Barrier body
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(barrier.x, barrier.y, barrier.width, barrier.height);
+                ctx.strokeStyle = '#c0392b';
+                ctx.lineWidth = 2;
+                ctx.strokeRect(barrier.x, barrier.y, barrier.width, barrier.height);
+
+                // Barrier emoji/icon
+                ctx.font = '24px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(barrier.type.text, barrier.x + barrier.width / 2, barrier.y + barrier.height / 2);
+            });
+        }
+
+        function drawScore() {
+            ctx.fillStyle = '#2c3e50';
+            ctx.font = 'bold 20px Arial';
+            ctx.textAlign = 'right';
+            ctx.fillText('Score: ' + score, canvas.width - 20, 30);
+        }
+
+        function drawStartScreen() {
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 32px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Teacher Jump!', canvas.width / 2, canvas.height / 2 - 60);
+
+            ctx.font = '18px Arial';
+            ctx.fillText('Help the teacher overcome barriers', canvas.width / 2, canvas.height / 2 - 20);
+            ctx.fillText('to effective education!', canvas.width / 2, canvas.height / 2 + 5);
+
+            ctx.font = 'bold 24px Arial';
+            ctx.fillStyle = '#FFD700';
+            ctx.fillText('Click or Press SPACE to Start', canvas.width / 2, canvas.height / 2 + 50);
+        }
+
+        function gameOver() {
+            gameRunning = false;
+            
+            // Draw game over overlay
+            ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 40px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 40);
+
+            ctx.font = '24px Arial';
+            ctx.fillText('Score: ' + score, canvas.width / 2, canvas.height / 2);
+            ctx.fillText('High Score: ' + highScore, canvas.width / 2, canvas.height / 2 + 35);
+
+            ctx.font = 'bold 20px Arial';
+            ctx.fillStyle = '#FFD700';
+            ctx.fillText('Click or Press SPACE to Retry', canvas.width / 2, canvas.height / 2 + 80);
+
+            scoreDisplay.textContent = `Score: ${score} | High Score: ${highScore}`;
+            
+            // Reset for next game
+            gameStarted = false;
+        }
+
+        function gameLoop() {
+            if (!gameRunning) return;
+
+            // Clear canvas
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw background elements
+            drawClouds();
+            drawGround();
+
+            // Update game objects
+            updateTeacher();
+            updateBarriers();
+
+            // Draw game objects
+            drawTeacher();
+            drawBarriers();
+            drawScore();
+
+            // Update frame counter
+            frameCount++;
+
+            // Update score display
+            scoreDisplay.textContent = `Score: ${score} | High Score: ${highScore}`;
+
+            // Continue game loop
+            requestAnimationFrame(gameLoop);
+        }
+
+        // Initial draw
+        function init() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            drawClouds();
+            drawGround();
+            drawTeacher();
+            drawStartScreen();
+            scoreDisplay.textContent = `Score: 0 | High Score: ${highScore}`;
+        }
+
+        init();
+    </script>
+</body>
+</html>

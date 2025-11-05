@@ -1,0 +1,1410 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Interactive 3D Keyboard</title>
+    <!-- Tailwind CSS for simple styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body, html {
+            margin: 0;
+            padding: 0;
+            height: 100%;
+            overflow: hidden; /* Prevent scrolling */
+            font-family: 'Inter', sans-serif;
+        }
+        #container {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        #info-box {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            background-color: rgba(255, 255, 255, 0.9);
+            padding: 1rem;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            max-width: 300px;
+            /* --- NEW: Make info box non-interactive --- */
+            pointer-events: none; 
+        }
+        
+        /* --- NEW: Style for the monitor overlay --- */
+        #monitor-iframe {
+            position: absolute;
+            display: none; /* Start hidden */
+            border: none;
+            background: #000; /* Black background for loading */
+            overflow: hidden; /* Hide scrollbars */
+            transform-style: preserve-3d;
+            backface-visibility: hidden;
+            pointer-events: auto;
+            /* We will set left, top, width, height, transform with JS */
+        }
+    </style>
+</head>
+<body class="bg-gray-100">
+
+    <!-- Container for the 3D scene -->
+    <div id="container"></div>
+
+    <!-- --- NEW: Iframe for monitor content --- -->
+    <iframe id="monitor-iframe"></iframe>
+
+    <!-- Info Box -->
+    <div id="info-box" class="text-gray-800">
+        <h1 class="text-xl font-bold mb-2">Interactive 3D Keyboard</h1>
+        <p class="text-sm">Click keyboard keys to display content on the monitor!</p>
+        <ul class="list-disc list-inside mt-2 text-xs space-y-1">
+            <li><strong>Key 000-002</strong>: HTML Pages & Games</li>
+            <li><strong>Key 003</strong>: Music Video</li>
+            <li><strong>Key 004, 008, 012</strong>: Logos</li>
+            <li><strong>Key 006, 011, 013</strong>: YouTube Videos</li>
+            <li><strong>Key 010</strong>: Mini Game</li>
+        </ul>
+        <p class="text-xs mt-2 text-gray-600">💡 Click the same key again to turn monitor off</p>
+        <p class="text-sm mt-2 font-semibold" id="click-log">Click on a key!</p>
+    </div>
+
+    <!-- 1. Include three.js (the 3D library) -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.138.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.138.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <!-- 2. Include GSAP (for simple animations) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/gsap/3.12.2/gsap.min.js"></script>
+
+    <!-- 3. Our Main 3D Application Logic -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+        // === 1. BASIC SCENE SETUP ===
+        let scene, camera, renderer, controls;
+        let clickableObjects = []; // Array to store all the meshes we can click
+        let monitorScreenMesh; // Variable to store the monitor's screen
+        let iframe; // --- NEW: Variable for the HTML iframe ---
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+        const clickLog = document.getElementById('click-log');
+        
+        let currentContent = null; // Track currently displayed content
+
+        // === CONTENT MAPPING SYSTEM ===
+        // Map keyboard keys to different content types
+        const keyContentMap = {
+            'key000': {
+                type: 'html',
+                src: 'content1.html',
+                description: 'Custom HTML Page'
+            },
+            'key001': {
+                type: 'interactive-gallery',
+                src: [
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg'
+                ],
+                description: 'Gallery'
+            },
+            'key002': {
+                type: 'game',
+                src: 'teacher-jump',
+                description: 'Mini Game'
+            },
+            'key003': {
+                type: 'video',
+                src: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+                description: 'Music Video'
+            },
+            'key004': {
+                type: 'image',
+                src: 'aste_logo.jpg',
+                description: 'Company Logo'
+            },
+            'key005': {
+                type: 'web-link',
+                src: {
+                    url: 'https://example.com',
+                    title: 'Example Website',
+                    description: 'Click to visit Example.com',
+                    icon: '🌐'
+                },
+                description: 'Example Website'
+            },
+            'key006': {
+                type: 'youtube',
+                src: 'https://www.youtube.com/embed/jNQXAC9IVRw',
+                description: 'Me at the zoo'
+            },
+            'key007': {
+                type: 'info-page',
+                src: {
+                    title: 'ASTE Conference 2025',
+                    buttons: [
+                        { text: '📝 Register Now', url: 'https://example.com/register' },
+                        { text: '🎤 View Keynotes', url: 'https://example.com/keynotes' },
+                        { text: '📅 View Schedule', url: 'https://example.com/schedule' }
+                    ]
+                },
+                description: 'Info Page'
+            },
+            'key008': {
+                type: 'image',
+                src: 'aste_logo.jpg',
+                description: 'Logo Alt'
+            },
+            'key009': {
+                type: 'gallery',
+                src: [
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg',
+                    'aste_logo.jpg'
+                ],
+                description: 'Photo Gallery'
+            },
+            'key010': {
+                type: 'game',
+                src: 'teacher-jump',
+                description: 'Teacher Jump Game'
+            },
+            'key011': {
+                type: 'video',
+                src: 'https://storage.googleapis.com/gtv-videos-bucket/sample/ForBiggerFun.mp4',
+                description: 'Music Video'
+            },
+            'key012': {
+                type: 'image',
+                src: 'aste_logo.jpg',
+                description: 'ASTE Logo'
+            },
+            'key013': {
+                type: 'youtube',
+                src: 'https://www.youtube.com/embed/d6egUsZvWu4',
+                description: 'YouTube Video'
+            },
+            'key014': {
+                type: 'html',
+                src: 'content1.html',
+                description: 'Custom HTML Page'
+            },
+            'key015': {
+                type: 'iframe',
+                src: 'https://example.com',
+                description: 'External Website'
+            },
+            // Add more keys as needed
+        };
+
+        function init() {
+            const container = document.getElementById('container');
+            
+            // --- NEW: Assign iframe element ---
+            iframe = document.getElementById('monitor-iframe');
+            // --- END NEW ---
+
+            // Scene
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0xf0f2f5); // Light gray background
+
+            // Camera
+            camera = new THREE.PerspectiveCamera(75, container.clientWidth / container.clientHeight, 0.1, 1000);
+            camera.position.set(0, 0.31, 0.25);
+
+            // Renderer
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            renderer.setSize(container.clientWidth, container.clientHeight);
+            renderer.setPixelRatio(window.devicePixelRatio);
+            renderer.outputEncoding = THREE.sRGBEncoding; // Correct color output
+            container.appendChild(renderer.domElement);
+
+            // Lights
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+            scene.add(ambientLight);
+
+            const directionalLight = new THREE.DirectionalLight(0xffffff, 1.0);
+            directionalLight.position.set(5, 10, 7.5);
+            scene.add(directionalLight);
+
+            // Controls
+            controls = new OrbitControls(camera, renderer.domElement);
+            controls.enableDamping = true;
+            controls.dampingFactor = 0.05;
+            controls.target.set(0, 0.2, 0); // Point controls at the center of the keyboard
+            controls.update();
+
+            // === 2. LOAD THE 3D MODEL ===
+            const loader = new GLTFLoader();
+            
+            const modelUrl = 'keyboard.glb';
+            
+            loader.load(modelUrl, (gltf) => {
+                const model = gltf.scene;
+                scene.add(model);
+                
+                console.log("Model loaded. Traversing scene to find mesh names:");
+                model.traverse((child) => {
+                    if (child.name) {
+                         console.log(`Found object: '${child.name}' (Type: ${child.type})`);
+                    }
+                    if (child.isMesh) {
+                        clickableObjects.push(child);
+                    }
+                });
+                console.log("--- Inspection complete. ---");
+
+            }, undefined, (error) => {
+                console.error('An error happened while loading the model:', error);
+                clickLog.innerText = "Error loading 3D model.";
+            });
+
+            // --- LOAD THE MONITOR MODEL ---
+            const monitorPlaceholderUrl = 'monitor.glb';
+            
+            loader.load(monitorPlaceholderUrl, (gltf) => {
+                const monitorModel = gltf.scene;
+                monitorModel.position.set(0, 0, -0.25);
+                monitorModel.scale.set(2, 2, 2);
+                monitorModel.name = "MonitorDisplay";
+                scene.add(monitorModel);
+                console.log("Monitor model loaded. Name: 'MonitorDisplay'");
+                
+                // --- NEW: Find the 'screen' mesh inside the monitor ---
+                monitorModel.traverse((child) => {
+                    if (child.isMesh && child.name === 'screen') {
+                        monitorScreenMesh = child;
+                        
+                        // --- EDIT: Set material to a simple dark "OFF" color ---
+                        // We no longer load any textures here.
+                        monitorScreenMesh.material = new THREE.MeshBasicMaterial({ 
+                            color: 0x050505 // Very dark grey
+                        });
+                        // --- END EDIT ---
+                        
+                        // --- NEW: Set initial state to "OFF" (black screen) ---
+                        if (iframe) {
+                            iframe.style.display = 'none';
+                            monitorScreenMesh.visible = true; // Show black 3D mesh
+                            clickLog.innerText = "Monitor OFF. Click a key to display content!";
+                        }
+                        // --- END NEW ---
+                        
+                        console.log("Successfully found and stored 'screen' mesh from monitor.");
+                    }
+                });
+                // --- END NEW ---
+
+            }, undefined, (error) => {
+                console.error('An error happened while loading the MONITOR model:', error);
+            });
+            // --- END NEW MONITOR LOAD ---
+
+
+            // === 3. EVENT LISTENERS ===
+            window.addEventListener('resize', onWindowResize);
+            document.addEventListener('mousedown', onDocumentMouseDown);
+
+            // Start the animation loop
+            animate();
+        }
+
+        function onWindowResize() {
+            const container = document.getElementById('container');
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        }
+
+        // === 4. CLICK DETECTION (RAYCASTING) ===
+        function onDocumentMouseDown(event) {
+            // --- NEW: Check if click was on the iframe ---
+            // If it was, don't raycast. This lets the user click *inside* the iframe.
+            if (event.target === iframe) {
+                return;
+            }
+            // --- END NEW ---
+            
+            mouse.x = (event.clientX / window.innerWidth) * 2 - 1;
+            mouse.y = - (event.clientY / window.innerHeight) * 2 + 1;
+
+            raycaster.setFromCamera(mouse, camera);
+
+            const intersects = raycaster.intersectObjects(clickableObjects, true);
+
+            if (intersects.length > 0) {
+                const clickedObject = intersects[0].object;
+
+                console.log(`You clicked on: ${clickedObject.name}`);
+                clickLog.innerText = `You clicked: ${clickedObject.name}`;
+                
+                let keyToAnimate = clickedObject;
+                while (keyToAnimate.parent && keyToAnimate.parent !== scene) {
+                    if (keyToAnimate.name.startsWith('key')) {
+                        break; 
+                    }
+                    keyToAnimate = keyToAnimate.parent;
+                }
+
+                if (keyToAnimate.name.startsWith('key')) {
+                    pressKey(keyToAnimate);
+                    
+                    // --- NEW: CONTENT LOADING SYSTEM ---
+                    const keyName = keyToAnimate.name;
+                    
+                    // Check if this key has mapped content
+                    if (keyContentMap[keyName]) {
+                        const contentData = keyContentMap[keyName];
+                        
+                        // If clicking the same key again, toggle off
+                        if (currentContent && currentContent === contentData) {
+                            turnOffMonitor();
+                        } else {
+                            // Load new content - pass keyName for display
+                            loadContentOnMonitor(contentData, keyName);
+                        }
+                    } else {
+                        // Key has no content mapped - just show it was clicked
+                        console.log(`Key ${keyName} has no content mapped.`);
+                        clickLog.innerText = `${keyName} clicked - no content assigned`;
+                    }
+                    // --- END NEW CONTENT LOADING SYSTEM ---
+                    
+                } else {
+                    console.log("Clicked object wasn't a key or key name not recognized.");
+                }
+            } else {
+                 clickLog.innerText = "Click on a key!";
+            }
+        }
+
+        function pressKey(keyMesh) {
+            if (keyMesh.userData.originalY === undefined) {
+                keyMesh.userData.originalY = keyMesh.position.y;
+            }
+            const originalY = keyMesh.userData.originalY;
+            const pressDepth = originalY - 0.01; 
+            const tl = gsap.timeline();
+            tl.to(keyMesh.position, {
+                y: pressDepth,
+                duration: 0.08, 
+                ease: "power2.out"
+            }).to(keyMesh.position, {
+                y: originalY,
+                duration: 0.2, 
+                ease: "elastic.out(1, 0.7)"
+            });
+        }
+
+        // === WEB LINK CARD FUNCTION ===
+        function runWebLinkCard(canvas, ctx, texture, contentData) {
+            const { url, title, description, icon } = contentData.src;
+            let isHovering = false;
+
+            // Button dimensions
+            const buttonWidth = 500;
+            const buttonHeight = 120;
+            const buttonX = (canvas.width - buttonWidth) / 2;
+            const buttonY = canvas.height / 2 + 80;
+
+            // Mouse move handler for hover effect
+            const mouseMoveHandler = (e) => {
+                if (currentContent !== contentData || !monitorScreenMesh) return;
+
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(monitorScreenMesh, false);
+
+                if (intersects.length > 0 && intersects[0].uv) {
+                    const uv = intersects[0].uv;
+                    const mouseX = uv.x * canvas.width;
+                    const mouseY = (1 - uv.y) * canvas.height;
+
+                    const wasHovering = isHovering;
+                    isHovering = (mouseX >= buttonX && mouseX <= buttonX + buttonWidth &&
+                                  mouseY >= buttonY && mouseY <= buttonY + buttonHeight);
+
+                    if (wasHovering !== isHovering) {
+                        render();
+                    }
+                } else {
+                    if (isHovering) {
+                        isHovering = false;
+                        render();
+                    }
+                }
+            };
+
+            // Click handler
+            const clickHandler = (e) => {
+                if (currentContent !== contentData || !monitorScreenMesh) return;
+
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(monitorScreenMesh, false);
+
+                if (intersects.length > 0 && intersects[0].uv) {
+                    const uv = intersects[0].uv;
+                    const mouseX = uv.x * canvas.width;
+                    const mouseY = (1 - uv.y) * canvas.height;
+
+                    if (mouseX >= buttonX && mouseX <= buttonX + buttonWidth &&
+                        mouseY >= buttonY && mouseY <= buttonY + buttonHeight) {
+                        window.open(url, '_blank');
+                    }
+                }
+            };
+
+            renderer.domElement.addEventListener('mousemove', mouseMoveHandler);
+            renderer.domElement.addEventListener('click', clickHandler);
+
+            function render() {
+                if (currentContent !== contentData) {
+                    renderer.domElement.removeEventListener('mousemove', mouseMoveHandler);
+                    renderer.domElement.removeEventListener('click', clickHandler);
+                    return;
+                }
+
+                // Background gradient
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#667eea');
+                gradient.addColorStop(1, '#764ba2');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Card container
+                const cardWidth = 700;
+                const cardHeight = 400;
+                const cardX = (canvas.width - cardWidth) / 2;
+                const cardY = (canvas.height - cardHeight) / 2 - 40;
+
+                // Card shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                ctx.fillRect(cardX + 10, cardY + 10, cardWidth, cardHeight);
+
+                // Card background
+                ctx.fillStyle = '#fff';
+                ctx.fillRect(cardX, cardY, cardWidth, cardHeight);
+
+                // Icon
+                ctx.font = '120px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(icon, canvas.width / 2, cardY + 130);
+
+                // Title
+                ctx.fillStyle = '#2c3e50';
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(title, canvas.width / 2, cardY + 220);
+
+                // Description
+                ctx.fillStyle = '#7f8c8d';
+                ctx.font = '24px Arial';
+                ctx.fillText(description, canvas.width / 2, cardY + 270);
+
+                // Button shadow
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                ctx.fillRect(buttonX + 5, buttonY + 5, buttonWidth, buttonHeight);
+
+                // Button
+                if (isHovering) {
+                    const btnGradient = ctx.createLinearGradient(buttonX, buttonY, buttonX, buttonY + buttonHeight);
+                    btnGradient.addColorStop(0, '#27ae60');
+                    btnGradient.addColorStop(1, '#229954');
+                    ctx.fillStyle = btnGradient;
+                } else {
+                    ctx.fillStyle = '#3498db';
+                }
+                ctx.fillRect(buttonX, buttonY, buttonWidth, buttonHeight);
+
+                // Button border
+                ctx.strokeStyle = isHovering ? '#fff' : 'rgba(255, 255, 255, 0.5)';
+                ctx.lineWidth = 4;
+                ctx.strokeRect(buttonX, buttonY, buttonWidth, buttonHeight);
+
+                // Button text
+                ctx.fillStyle = '#fff';
+                ctx.font = isHovering ? 'bold 36px Arial' : 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText('🔗 Visit Website', buttonX + buttonWidth / 2, buttonY + buttonHeight / 2);
+
+                // URL display
+                ctx.fillStyle = '#ecf0f1';
+                ctx.font = '18px Arial';
+                ctx.fillText(url, canvas.width / 2, canvas.height - 30);
+
+                texture.needsUpdate = true;
+            }
+
+            render();
+        }
+
+        // === INFO PAGE FUNCTION ===
+        function runInfoPage(canvas, ctx, texture, contentData) {
+            const { title, buttons } = contentData.src;
+            let hoveredButton = null;
+
+            // Button dimensions and positions
+            const buttonWidth = 400;
+            const buttonHeight = 80;
+            const buttonSpacing = 30;
+            const startY = 250;
+
+            const buttonRects = buttons.map((btn, index) => ({
+                x: (canvas.width - buttonWidth) / 2,
+                y: startY + (index * (buttonHeight + buttonSpacing)),
+                width: buttonWidth,
+                height: buttonHeight,
+                text: btn.text,
+                url: btn.url
+            }));
+
+            // Mouse move handler for hover effect
+            const mouseMoveHandler = (e) => {
+                if (currentContent !== contentData || !monitorScreenMesh) return;
+
+                // Calculate mouse position in normalized device coordinates
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+                // Raycast to the monitor screen
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(monitorScreenMesh, false);
+
+                if (intersects.length > 0 && intersects[0].uv) {
+                    // Get UV coordinates (0-1 range)
+                    const uv = intersects[0].uv;
+                    const mouseX = uv.x * canvas.width;
+                    const mouseY = (1 - uv.y) * canvas.height; // Flip Y coordinate
+
+                    let foundHover = null;
+                    buttonRects.forEach(btn => {
+                        if (mouseX >= btn.x && mouseX <= btn.x + btn.width &&
+                            mouseY >= btn.y && mouseY <= btn.y + btn.height) {
+                            foundHover = btn;
+                        }
+                    });
+
+                    if (foundHover !== hoveredButton) {
+                        hoveredButton = foundHover;
+                        render();
+                    }
+                } else {
+                    // Mouse not over the screen
+                    if (hoveredButton !== null) {
+                        hoveredButton = null;
+                        render();
+                    }
+                }
+            };
+
+            // Click handler for buttons
+            const clickHandler = (e) => {
+                if (currentContent !== contentData || !monitorScreenMesh) return;
+
+                // Calculate mouse position in normalized device coordinates
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+                // Raycast to the monitor screen
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(monitorScreenMesh, false);
+
+                if (intersects.length > 0 && intersects[0].uv) {
+                    const uv = intersects[0].uv;
+                    const mouseX = uv.x * canvas.width;
+                    const mouseY = (1 - uv.y) * canvas.height; // Flip Y coordinate
+
+                    buttonRects.forEach(btn => {
+                        if (mouseX >= btn.x && mouseX <= btn.x + btn.width &&
+                            mouseY >= btn.y && mouseY <= btn.y + btn.height) {
+                            window.open(btn.url, '_blank');
+                        }
+                    });
+                }
+            };
+
+            renderer.domElement.addEventListener('mousemove', mouseMoveHandler);
+            renderer.domElement.addEventListener('click', clickHandler);
+
+            function render() {
+                if (currentContent !== contentData) {
+                    // Clean up event listeners
+                    renderer.domElement.removeEventListener('mousemove', mouseMoveHandler);
+                    renderer.domElement.removeEventListener('click', clickHandler);
+                    return;
+                }
+
+                // Background gradient
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#0f2027');
+                gradient.addColorStop(0.5, '#203a43');
+                gradient.addColorStop(1, '#2c5364');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Title
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 56px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText(title, canvas.width / 2, 120);
+
+                // Subtitle/description
+                ctx.font = '24px Arial';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.fillText('Click a button to learn more', canvas.width / 2, 180);
+
+                // Draw buttons
+                buttonRects.forEach(btn => {
+                    const isHovered = btn === hoveredButton;
+
+                    // Button shadow
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    ctx.fillRect(btn.x + 5, btn.y + 5, btn.width, btn.height);
+
+                    // Button background
+                    if (isHovered) {
+                        const btnGradient = ctx.createLinearGradient(btn.x, btn.y, btn.x, btn.y + btn.height);
+                        btnGradient.addColorStop(0, '#4CAF50');
+                        btnGradient.addColorStop(1, '#45a049');
+                        ctx.fillStyle = btnGradient;
+                    } else {
+                        ctx.fillStyle = '#2196F3';
+                    }
+                    ctx.fillRect(btn.x, btn.y, btn.width, btn.height);
+
+                    // Button border
+                    ctx.strokeStyle = isHovered ? '#fff' : 'rgba(255, 255, 255, 0.5)';
+                    ctx.lineWidth = 3;
+                    ctx.strokeRect(btn.x, btn.y, btn.width, btn.height);
+
+                    // Button text
+                    ctx.fillStyle = '#fff';
+                    ctx.font = isHovered ? 'bold 32px Arial' : 'bold 28px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(btn.text, btn.x + btn.width / 2, btn.y + btn.height / 2);
+                });
+
+                // Footer instruction
+                ctx.font = '18px Arial';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.textAlign = 'center';
+                ctx.fillText('🖱️ Hover and click buttons to navigate', canvas.width / 2, canvas.height - 30);
+
+                texture.needsUpdate = true;
+            }
+
+            // Initial render
+            render();
+        }
+
+        // === INTERACTIVE GALLERY FUNCTION ===
+        function runInteractiveGallery(canvas, ctx, texture, contentData) {
+            const imageUrls = contentData.src;
+            let currentIndex = 0;
+            let images = [];
+            let imagesLoaded = false;
+
+            // Load all images
+            imageUrls.forEach((url, index) => {
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = function() {
+                    images[index] = img;
+                    if (images.filter(i => i).length === imageUrls.length) {
+                        imagesLoaded = true;
+                        render();
+                    }
+                };
+                img.src = url;
+            });
+
+            // Keyboard navigation
+            const keyHandler = (e) => {
+                if (currentContent !== contentData) return;
+                
+                if (e.key === 'ArrowRight') {
+                    e.preventDefault();
+                    currentIndex = (currentIndex + 1) % images.length;
+                    render();
+                } else if (e.key === 'ArrowLeft') {
+                    e.preventDefault();
+                    currentIndex = (currentIndex - 1 + images.length) % images.length;
+                    render();
+                }
+            };
+
+            document.addEventListener('keydown', keyHandler);
+
+            function render() {
+                if (!imagesLoaded || currentContent !== contentData) {
+                    if (currentContent !== contentData) {
+                        document.removeEventListener('keydown', keyHandler);
+                    }
+                    return;
+                }
+
+                // Background gradient
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#1a1a2e');
+                gradient.addColorStop(1, '#16213e');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                // Title
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 48px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🎨 Interactive Gallery', canvas.width / 2, 60);
+
+                // Current image
+                const img = images[currentIndex];
+                if (img) {
+                    const maxWidth = canvas.width - 100;
+                    const maxHeight = canvas.height - 200;
+                    const scale = Math.min(maxWidth / img.width, maxHeight / img.height);
+                    const imgW = img.width * scale;
+                    const imgH = img.height * scale;
+                    const x = (canvas.width - imgW) / 2;
+                    const y = 120;
+
+                    // White frame
+                    ctx.fillStyle = '#fff';
+                    ctx.fillRect(x - 10, y - 10, imgW + 20, imgH + 20);
+
+                    // Shadow
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.3)';
+                    ctx.fillRect(x - 5, y - 5, imgW + 20, imgH + 20);
+
+                    // Image
+                    ctx.drawImage(img, x, y, imgW, imgH);
+                }
+
+                // Navigation arrows
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                ctx.font = 'bold 48px Arial';
+                
+                // Left arrow
+                ctx.fillText('◀', 50, canvas.height / 2 + 50);
+                
+                // Right arrow
+                ctx.fillText('▶', canvas.width - 50, canvas.height / 2 + 50);
+
+                // Counter
+                ctx.font = 'bold 24px Arial';
+                ctx.fillText(`${currentIndex + 1} / ${images.length}`, canvas.width / 2, canvas.height - 40);
+
+                // Instructions
+                ctx.font = '18px Arial';
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.6)';
+                ctx.fillText('Use ← → arrow keys to navigate', canvas.width / 2, canvas.height - 10);
+
+                texture.needsUpdate = true;
+            }
+
+            // Initial render with loading message
+            ctx.fillStyle = '#1a1a2e';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.fillStyle = '#fff';
+            ctx.font = 'bold 36px Arial';
+            ctx.textAlign = 'center';
+            ctx.fillText('Loading Gallery...', canvas.width / 2, canvas.height / 2);
+            texture.needsUpdate = true;
+        }
+
+        // === TEACHER JUMP GAME FUNCTION ===
+        function runTeacherJumpGame(canvas, ctx, texture, contentData) {
+            // Game variables
+            let gameRunning = false;
+            let gameStarted = false;
+            let score = 0;
+            let gameSpeed = 6;
+            let gravity = 0.8;
+            let frameCount = 0;
+
+            // Teacher (player)
+            const teacher = {
+                x: 100,
+                y: 0,
+                width: 40,
+                height: 50,
+                jumping: false,
+                velocityY: 0,
+                groundY: canvas.height - 80
+            };
+            teacher.y = teacher.groundY;
+
+            // Barriers array
+            let barriers = [];
+
+            // Barrier types with educational themes
+            const barrierTypes = [
+                { text: '📱', name: 'Distraction' },
+                { text: '💤', name: 'Apathy' },
+                { text: '📝', name: 'Paperwork' },
+                { text: '🔒', name: 'Budget Cuts' },
+                { text: '⏰', name: 'Time Pressure' },
+                { text: '🚫', name: 'Barriers' }
+            ];
+
+            // Input handling
+            const keyHandler = (e) => {
+                if (currentContent !== contentData) return;
+                
+                if (e.code === 'Space') {
+                    e.preventDefault();
+                    if (!gameStarted) {
+                        startGame();
+                    } else if (gameRunning && !teacher.jumping) {
+                        jump();
+                    }
+                }
+            };
+
+            const clickHandler = (e) => {
+                if (currentContent !== contentData) return;
+                
+                if (!gameStarted) {
+                    startGame();
+                } else if (gameRunning && !teacher.jumping) {
+                    jump();
+                }
+            };
+
+            document.addEventListener('keydown', keyHandler);
+            canvas.addEventListener('click', clickHandler);
+
+            function startGame() {
+                gameStarted = true;
+                gameRunning = true;
+                score = 0;
+                gameSpeed = 6;
+                barriers = [];
+                frameCount = 0;
+                teacher.y = teacher.groundY;
+                teacher.velocityY = 0;
+                teacher.jumping = false;
+            }
+
+            function jump() {
+                if (!teacher.jumping) {
+                    teacher.jumping = true;
+                    teacher.velocityY = -15;
+                }
+            }
+
+            function updateTeacher() {
+                if (teacher.jumping) {
+                    teacher.velocityY += gravity;
+                    teacher.y += teacher.velocityY;
+
+                    if (teacher.y >= teacher.groundY) {
+                        teacher.y = teacher.groundY;
+                        teacher.jumping = false;
+                        teacher.velocityY = 0;
+                    }
+                }
+            }
+
+            function createBarrier() {
+                const barrierType = barrierTypes[Math.floor(Math.random() * barrierTypes.length)];
+                barriers.push({
+                    x: canvas.width,
+                    y: teacher.groundY,
+                    width: 35,
+                    height: 50,
+                    type: barrierType
+                });
+            }
+
+            function updateBarriers() {
+                if (frameCount % 90 === 0) {
+                    createBarrier();
+                }
+
+                barriers = barriers.filter(barrier => {
+                    barrier.x -= gameSpeed;
+
+                    if (gameRunning &&
+                        teacher.x < barrier.x + barrier.width &&
+                        teacher.x + teacher.width > barrier.x &&
+                        teacher.y < barrier.y + barrier.height &&
+                        teacher.y + teacher.height > barrier.y) {
+                        gameOver();
+                    }
+
+                    if (barrier.x + barrier.width < 0) {
+                        score++;
+                        if (score % 5 === 0 && gameSpeed < 12) {
+                            gameSpeed += 0.5;
+                        }
+                        return false;
+                    }
+                    return true;
+                });
+            }
+
+            function drawGround() {
+                ctx.fillStyle = '#8B4513';
+                ctx.fillRect(0, canvas.height - 60, canvas.width, 60);
+                
+                ctx.strokeStyle = '#654321';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(0, canvas.height - 60);
+                ctx.lineTo(canvas.width, canvas.height - 60);
+                ctx.stroke();
+
+                ctx.fillStyle = '#228B22';
+                for (let i = 0; i < canvas.width; i += 20) {
+                    ctx.fillRect(i - (frameCount % 20), canvas.height - 65, 15, 5);
+                }
+            }
+
+            function drawClouds() {
+                ctx.fillStyle = 'rgba(255, 255, 255, 0.8)';
+                const cloudOffset = (frameCount * 0.5) % (canvas.width + 200);
+                
+                ctx.beginPath();
+                ctx.arc(200 - cloudOffset, 50, 25, 0, Math.PI * 2);
+                ctx.arc(230 - cloudOffset, 50, 30, 0, Math.PI * 2);
+                ctx.arc(260 - cloudOffset, 50, 25, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.beginPath();
+                ctx.arc(500 - cloudOffset, 80, 20, 0, Math.PI * 2);
+                ctx.arc(525 - cloudOffset, 80, 25, 0, Math.PI * 2);
+                ctx.arc(550 - cloudOffset, 80, 20, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            function drawTeacher() {
+                ctx.fillStyle = '#3498db';
+                ctx.fillRect(teacher.x, teacher.y + 20, teacher.width, 30);
+
+                ctx.fillStyle = '#f4a460';
+                ctx.beginPath();
+                ctx.arc(teacher.x + teacher.width / 2, teacher.y + 10, 12, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.strokeStyle = '#000';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.arc(teacher.x + teacher.width / 2 - 5, teacher.y + 10, 4, 0, Math.PI * 2);
+                ctx.arc(teacher.x + teacher.width / 2 + 5, teacher.y + 10, 4, 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.strokeStyle = '#3498db';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(teacher.x + 5, teacher.y + 25);
+                ctx.lineTo(teacher.x - 5, teacher.y + 30);
+                ctx.stroke();
+
+                ctx.fillStyle = '#e74c3c';
+                ctx.fillRect(teacher.x - 8, teacher.y + 28, 12, 8);
+
+                ctx.strokeStyle = '#2c3e50';
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(teacher.x + 15, teacher.y + 50);
+                ctx.lineTo(teacher.x + 12, teacher.y + 60);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(teacher.x + 25, teacher.y + 50);
+                ctx.lineTo(teacher.x + 28, teacher.y + 60);
+                ctx.stroke();
+            }
+
+            function drawBarriers() {
+                barriers.forEach(barrier => {
+                    ctx.fillStyle = 'rgba(0, 0, 0, 0.2)';
+                    ctx.fillRect(barrier.x + 5, barrier.y + barrier.height, barrier.width, 5);
+
+                    ctx.fillStyle = '#e74c3c';
+                    ctx.fillRect(barrier.x, barrier.y, barrier.width, barrier.height);
+                    ctx.strokeStyle = '#c0392b';
+                    ctx.lineWidth = 2;
+                    ctx.strokeRect(barrier.x, barrier.y, barrier.width, barrier.height);
+
+                    ctx.font = '24px Arial';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText(barrier.type.text, barrier.x + barrier.width / 2, barrier.y + barrier.height / 2);
+                });
+            }
+
+            function drawScore() {
+                ctx.fillStyle = '#2c3e50';
+                ctx.font = 'bold 20px Arial';
+                ctx.textAlign = 'right';
+                ctx.fillText('Score: ' + score, canvas.width - 20, 30);
+            }
+
+            function drawStartScreen() {
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.5)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 32px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Teacher Jump!', canvas.width / 2, canvas.height / 2 - 40);
+
+                ctx.font = '18px Arial';
+                ctx.fillText('Press SPACE to Start', canvas.width / 2, canvas.height / 2 + 20);
+            }
+
+            function gameOver() {
+                gameRunning = false;
+                
+                ctx.fillStyle = 'rgba(0, 0, 0, 0.7)';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 40px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('Game Over!', canvas.width / 2, canvas.height / 2 - 40);
+
+                ctx.font = '24px Arial';
+                ctx.fillText('Score: ' + score, canvas.width / 2, canvas.height / 2);
+
+                ctx.font = 'bold 20px Arial';
+                ctx.fillStyle = '#FFD700';
+                ctx.fillText('Press SPACE to Retry', canvas.width / 2, canvas.height / 2 + 50);
+
+                texture.needsUpdate = true;
+                
+                gameStarted = false;
+            }
+
+            function gameLoop() {
+                if (currentContent !== contentData) {
+                    // Clean up event listeners when content changes
+                    document.removeEventListener('keydown', keyHandler);
+                    canvas.removeEventListener('click', clickHandler);
+                    return;
+                }
+
+                // Clear canvas with sky gradient
+                const gradient = ctx.createLinearGradient(0, 0, 0, canvas.height);
+                gradient.addColorStop(0, '#87CEEB');
+                gradient.addColorStop(0.5, '#E0F6FF');
+                gradient.addColorStop(0.5, '#90EE90');
+                gradient.addColorStop(1, '#98FB98');
+                ctx.fillStyle = gradient;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+                drawClouds();
+                drawGround();
+
+                if (!gameStarted) {
+                    drawTeacher();
+                    drawStartScreen();
+                    texture.needsUpdate = true;
+                } else if (gameRunning) {
+                    updateTeacher();
+                    updateBarriers();
+                    drawTeacher();
+                    drawBarriers();
+                    drawScore();
+                    frameCount++;
+                    texture.needsUpdate = true;
+                }
+
+                requestAnimationFrame(gameLoop);
+            }
+
+            // Start the game loop
+            gameLoop();
+        }
+
+        // === NEW: FUNCTION TO LOAD CONTENT ON MONITOR ===
+        function loadContentOnMonitor(contentData, keyName) {
+            if (!monitorScreenMesh) return;
+
+            const { type, src, description } = contentData;
+            currentContent = contentData;
+
+            console.log('Loading ' + type + ': ' + src);
+            clickLog.innerText = 'Displaying [' + keyName + ']: ' + description;
+
+            // Create a canvas to render content
+            const canvas = document.createElement('canvas');
+            canvas.width = 1024;
+            canvas.height = 768;
+            const ctx = canvas.getContext('2d');
+            
+            // Create texture from canvas
+            const texture = new THREE.CanvasTexture(canvas);
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            
+            // Apply texture to monitor screen
+            monitorScreenMesh.material = new THREE.MeshBasicMaterial({
+                map: texture,
+                side: THREE.DoubleSide
+            });
+            
+            // Show the mesh with texture
+            monitorScreenMesh.visible = true;
+            
+            // Handle different content types
+            if (type === 'image') {
+                // Load and draw image
+                const img = new Image();
+                img.crossOrigin = 'anonymous';
+                img.onload = function() {
+                    // Center and scale image
+                    const scale = Math.min(canvas.width / img.width, canvas.height / img.height);
+                    const x = (canvas.width - img.width * scale) / 2;
+                    const y = (canvas.height - img.height * scale) / 2;
+                    ctx.drawImage(img, x, y, img.width * scale, img.height * scale);
+                    texture.needsUpdate = true;
+                };
+                img.src = src;
+            } else if (type === 'gallery') {
+                // Render a grid of images
+                const imageUrls = src; // Array of image URLs
+                const cols = 3;
+                const rows = 2;
+                const padding = 20;
+                const gap = 15;
+                
+                // Calculate grid dimensions
+                const availableWidth = canvas.width - (padding * 2) - (gap * (cols - 1));
+                const availableHeight = canvas.height - (padding * 2) - (gap * (rows - 1)) - 80; // Leave space for title
+                const cellWidth = availableWidth / cols;
+                const cellHeight = availableHeight / rows;
+                
+                // Draw background
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                
+                // Draw title
+                ctx.fillStyle = '#fff';
+                ctx.font = 'bold 36px Arial';
+                ctx.textAlign = 'center';
+                ctx.fillText('🎨 Photo Gallery', canvas.width / 2, 50);
+                
+                // Load and draw all images in grid
+                let loadedCount = 0;
+                imageUrls.forEach((url, index) => {
+                    const img = new Image();
+                    img.crossOrigin = 'anonymous';
+                    img.onload = function() {
+                        const col = index % cols;
+                        const row = Math.floor(index / cols);
+                        
+                        const x = padding + (col * (cellWidth + gap));
+                        const y = padding + 80 + (row * (cellHeight + gap));
+                        
+                        // Draw white border/frame
+                        ctx.fillStyle = '#fff';
+                        ctx.fillRect(x - 3, y - 3, cellWidth + 6, cellHeight + 6);
+                        
+                        // Draw image (fit and center)
+                        const scale = Math.min(cellWidth / img.width, cellHeight / img.height);
+                        const imgW = img.width * scale;
+                        const imgH = img.height * scale;
+                        const imgX = x + (cellWidth - imgW) / 2;
+                        const imgY = y + (cellHeight - imgH) / 2;
+                        
+                        ctx.drawImage(img, imgX, imgY, imgW, imgH);
+                        
+                        loadedCount++;
+                        if (loadedCount === imageUrls.length) {
+                            texture.needsUpdate = true;
+                        }
+                    };
+                    img.src = url;
+                });
+                
+                // Update texture immediately with background
+                texture.needsUpdate = true;
+                
+            } else if (type === 'video') {
+                // Create video element
+                const video = document.createElement('video');
+                video.src = src;
+                video.crossOrigin = 'anonymous';
+                video.loop = true;
+                video.muted = true; // Mute to allow autoplay
+                video.play();
+                
+                // Function to continuously update texture with video frames
+                function updateVideoTexture() {
+                    if (currentContent === contentData && video.readyState === video.HAVE_ENOUGH_DATA) {
+                        // Center and scale video
+                        const scale = Math.min(canvas.width / video.videoWidth, canvas.height / video.videoHeight);
+                        const x = (canvas.width - video.videoWidth * scale) / 2;
+                        const y = (canvas.height - video.videoHeight * scale) / 2;
+                        
+                        // Clear canvas
+                        ctx.fillStyle = '#000';
+                        ctx.fillRect(0, 0, canvas.width, canvas.height);
+                        
+                        // Draw video frame
+                        ctx.drawImage(video, x, y, video.videoWidth * scale, video.videoHeight * scale);
+                        texture.needsUpdate = true;
+                    }
+                    
+                    // Continue updating if this is still the current content
+                    if (currentContent === contentData) {
+                        requestAnimationFrame(updateVideoTexture);
+                    }
+                }
+                
+                // Start updating when video is ready
+                video.addEventListener('loadeddata', () => {
+                    updateVideoTexture();
+                });
+            } else if (type === 'game') {
+                // Render game directly on canvas texture
+                if (src === 'teacher-jump') {
+                    runTeacherJumpGame(canvas, ctx, texture, contentData);
+                }
+            } else if (type === 'interactive-gallery') {
+                // Render interactive gallery on canvas texture
+                runInteractiveGallery(canvas, ctx, texture, contentData);
+            } else if (type === 'info-page') {
+                // Render interactive info page on canvas texture
+                runInfoPage(canvas, ctx, texture, contentData);
+            } else if (type === 'web-link') {
+                // Render web link card on canvas texture
+                runWebLinkCard(canvas, ctx, texture, contentData);
+            } else if (type === 'html' || type === 'iframe') {
+                // For HTML and iframe content, load in visible iframe overlay
+                // Since we can't capture cross-origin or complex HTML to canvas,
+                // we'll show the iframe positioned over the monitor
+                
+                if (iframe) {
+                    iframe.src = src;
+                    iframe.style.display = 'block';
+                    // Position will be updated in animate loop
+                }
+                
+                // Show a styled background on the 3D mesh
+                ctx.fillStyle = '#000';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                texture.needsUpdate = true;
+                
+                monitorScreenMesh.material.opacity = 0.1;
+                monitorScreenMesh.material.transparent = true;
+                
+            } else {
+                // For other content types (YouTube, etc.), show a placeholder
+                ctx.fillStyle = '#1a1a2e';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.fillStyle = '#fff';
+                ctx.font = '48px Arial';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+                ctx.fillText(description, canvas.width / 2, canvas.height / 2);
+                texture.needsUpdate = true;
+            }
+
+            // Update iframe position if it's an HTML/iframe type
+            if (type === 'html' || type === 'iframe') {
+                // Store reference for position updates
+                window.currentIframeContent = true;
+            } else {
+                window.currentIframeContent = false;
+                if (iframe) iframe.style.display = 'none';
+            }
+        }
+
+        // === NEW: FUNCTION TO TURN OFF MONITOR ===
+        function turnOffMonitor() {
+            if (!monitorScreenMesh) return;
+
+            console.log("Turning monitor OFF.");
+            clickLog.innerText = "Monitor OFF. Click a key to display content!";
+            
+            // Hide iframe if it was showing
+            if (iframe) iframe.style.display = 'none';
+            window.currentIframeContent = false;
+            
+            // Reset to dark material
+            monitorScreenMesh.material = new THREE.MeshBasicMaterial({ 
+                color: 0x050505 
+            });
+            
+            currentContent = null;
+            monitorScreenMesh.visible = true;
+        }
+        
+        // === NEW: FUNCTION TO UPDATE IFRAME POSITION ===
+        function updateIframePosition() {
+            if (!window.currentIframeContent || !monitorScreenMesh || !iframe) return;
+
+            // Get the monitor screen's world position
+            const screenPosition = new THREE.Vector3();
+            monitorScreenMesh.getWorldPosition(screenPosition);
+
+            // Project to screen coordinates
+            const screenCoords = screenPosition.clone().project(camera);
+            
+            // Convert to pixel coordinates
+            const x = (screenCoords.x * 0.5 + 0.5) * window.innerWidth;
+            const y = (screenCoords.y * -0.5 + 0.5) * window.innerHeight;
+
+            // Calculate size based on distance and scale
+            const distance = camera.position.distanceTo(screenPosition);
+            const scale = 280 / distance; // Adjust this value to match monitor size
+            
+            const width = scale * 1.6; // Aspect ratio adjustment
+            const height = scale * 1.2;
+
+            // Apply position and size
+            iframe.style.left = (x - width / 2) + 'px';
+            iframe.style.top = (y - height / 2) + 'px';
+            iframe.style.width = width + 'px';
+            iframe.style.height = height + 'px';
+        }
+        
+        // === 6. ANIMATION LOOP ===
+        function animate() {
+            requestAnimationFrame(animate);
+
+            // Update controls (for damping)
+            controls.update();
+
+            // Update iframe position if showing HTML content
+            updateIframePosition();
+
+            // Render the scene
+            renderer.render(scene, camera);
+        }
+
+        // Start the application
+        init();
+
+    </script>
+</body>
+</html>
+
+

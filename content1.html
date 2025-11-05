@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Content 1</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 20px;
+            text-shadow: 2px 2px 4px rgba(0,0,0,0.3);
+        }
+        p {
+            font-size: 1.2em;
+            text-align: center;
+            max-width: 80%;
+        }
+        .animated-box {
+            width: 100px;
+            height: 100px;
+            background: white;
+            margin-top: 30px;
+            animation: spin 3s linear infinite;
+            border-radius: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <h1>🎨 Custom HTML Page</h1>
+    <p>This is a custom HTML page displayed on the monitor!</p>
+    <p>You can add any HTML, CSS, or JavaScript here.</p>
+    <div class="animated-box"></div>
+</body>
+</html>
